@@ -213,7 +213,7 @@ there are no spots with <500 UMIs so we will not remove any of them.
 Before filtering:
 
 ```{r}
-se_obj
+sp_obj
 ```
 
 ```{r}
@@ -226,7 +226,7 @@ sp_obj <- subset(
 After filtering:
 
 ```{r}
-se_obj
+sp_obj
 ```
 
 ## Preprocessing
@@ -300,8 +300,9 @@ umap_plt + sp_plt
 
 ## Gene expression and annotation
 
-ESR1 and ERBB2 are the most common mutations in breast cancer, so one way of 
-annotating the tissue is by looking at ESR1 and ERBB2 positive/negative regions.
+ESR1 and ERBB2 are the two of the most common mutations in breast cancer, so one
+way of annotating the tissue is by looking at ESR1 and ERBB2 positive/negative 
+regions.
 
 ```{r fig.width=18, fig.height=6}
 SpatialFeaturePlot(
@@ -320,10 +321,10 @@ sp_obj@meta.data <- sp_obj@meta.data %>%
   mutate(annotation = case_when(
     SCT_snn_res.0.3 == 0 ~ "Fibrotic",
     SCT_snn_res.0.3 == 1 ~ "Fibrotic",
-    SCT_snn_res.0.3 == 2 ~ "HER2-/ESR1+",
-    SCT_snn_res.0.3 == 3 ~ "HER2-/ESR1-",
-    SCT_snn_res.0.3 == 4 ~ "HER2+/ESR1-",
-    SCT_snn_res.0.3 == 5 ~ "HER2+/ESR1+",
+    SCT_snn_res.0.3 == 2 ~ "HER2-/ESR1-",
+    SCT_snn_res.0.3 == 3 ~ "HER2-/ESR1+",
+    SCT_snn_res.0.3 == 4 ~ "HER2+/ESR1+",
+    SCT_snn_res.0.3 == 5 ~ "HER2+/ESR1-",
     SCT_snn_res.0.3 == 6 ~ "HER2-/ESR1-",
     SCT_snn_res.0.3 == 7 ~ "HER2-/ESR1-",
     SCT_snn_res.0.3 == 8 ~ "HER2-/ESR1-")
