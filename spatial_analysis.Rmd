@@ -1,0 +1,514 @@
+---
+title: "Advanced Spatial Analysis"
+author:
+- name: Paula Nieto
+  affiliation: 
+  - Centro Nacional de Análisis Genómico (CNAG)
+  email: paula.nieto@cnag.crg.eu
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Analysis of Spatial Data
+
+We are going to analyze an invasive ductal carcinoma breast tissue section from [10x Genomicsis](https://www.10xgenomics.com/) Visium Gene Expression platform.
+
+For the analysis we will mainly use the R package [Seurat](https://satijalab.org/seurat/index.html).
+
+## Download Data
+
+You can download the data from [this website](https://www.10xgenomics.com/resources/datasets/human-breast-cancer-block-a-section-1-1-standard-1-1-0) or using `curl`, as shown below. We do not need to do it because it is already in the `data` folder.
+
+```{bash, eval = FALSE}
+# download files
+curl -O https://cf.10xgenomics.com/samples/spatial-exp/1.1.0/V1_Breast_Cancer_Block_A_Section_1/V1_Breast_Cancer_Block_A_Section_1_filtered_feature_bc_matrix.h5
+curl -O https://cf.10xgenomics.com/samples/spatial-exp/1.1.0/V1_Breast_Cancer_Block_A_Section_1/V1_Breast_Cancer_Block_A_Section_1_spatial.tar.gz
+```
+
+## Libraries
+
+These are the libraries we are going to use:
+
+```{r libraries}
+library(tidyverse)
+library(Seurat)
+library(patchwork)
+```
+
+
+```{r seed}
+# set seed for reproducibility purposes
+set.seed(12345)
+
+# create palette for the cell types from the pals package
+# cell_type_palette <- as.vector(pals::polychrome())
+cell_type_palette <- c(
+  "#5A5156", "#E4E1E3", "#F6222E", "#FE00FA",
+  "#16FF32", "#3283FE", "#FEAF16", "#B00068",
+  "#1CFFCE", "#90AD1C", "#2ED9FF", "#DEA0FD",
+  "#AA0DFE", "#F8A19F", "#325A9B", "#C4451C",
+  "#1C8356", "#85660D", "#B10DA1", "#FBE426",
+  "#1CBE4F", "#FA0087", "#FC1CBF", "#F7E1A0",
+  "#C075A6", "#782AB6", "#AAF400", "#BDCDFF",
+  "#822E1C", "#B5EFB5", "#7ED7D1", "#1C7F93",
+  "#D85FF7", "#683B79", "#66B0FF", "#3B00FB")
+```
+
+## Load data with Seurat
+We start by loading the data Visium data. Note that here we start by already 
+loading the filtered expression data. This means that we are only keeping those 
+spots that overlap with the tissue as determined by `spaceranger`.
+
+If we expect there to be overpermabilization of the tissue or want to get a more
+general look we can load the raw HDF5 file instead.
+```{r}
+sp_obj <- Load10X_Spatial(
+  data.dir = "data",
+  # Name of H5 file containing the feature barcode matrix
+  filename = "filtered_feature_bc_matrix.h5",
+  # Name of assay
+  assay = "Spatial",
+  # Name of the image
+  slice = "slice1",
+  # Only keep spots that have been determined to be over tissue
+  filter.matrix = TRUE)
+```
+
+The visium data from 10x consists is stored in a Seurat object. This object has 
+a very similar structure to the scRNAseq object:
+
+* A spot x gene expression matrix (similar to the cell x gene matrix)
+
+```{r}
+sp_obj[["Spatial"]][1:5, 1:5]
+```
+
+* H&E Image of the tissue slice (obtained from staining during sample processing in the lab)
+
+It adds one slot which contains the images of the Visium experiments as seen below:
+```{r}
+sp_obj@images
+```
+
+We can visualize the image as follows:
+```{r fig.width=5, fig.height=5}
+SpatialPlot(
+  sp_obj, 
+  pt.size = 0,
+  crop = FALSE
+  ) + 
+  NoLegend()
+```
+
+* Scaling factors that relate the original high resolution image to the lower resolution image used here for visualization.
+
+```{r}
+sp_obj@images$slice1@scale.factors
+```
+
+## Quality control
+
+We will first go over some basic QC steps to remove poor quality spots and lowly
+captured genes.
+
+As with single-cell objects, we have some important features that we can use to filter out bad quality spots.
+
+* nCount_Spatial: number of UMIs per spot
+
+```{r fig.width=12, fig.height=6}
+plot_1 <- VlnPlot(
+  sp_obj, 
+  features = "nCount_Spatial", 
+  pt.size = 0.1
+  ) + 
+  NoLegend()
+
+plot_2 <- SpatialFeaturePlot(
+  sp_obj, 
+  features = "nCount_Spatial"
+  )
+
+plot_1 | plot_2
+```
+
+The variability in the distribution of UMIs is related to the tissue
+architecture, i.e. tumoral regions have a higher cell density than fibrotic
+regions and thus contain spots with higher counts.
+
+* nFeature_Spatial: number of genes per spot
+
+```{r fig.width=12, fig.height=6}
+plot_1 <- VlnPlot(
+  sp_obj, 
+  features = "nFeature_Spatial", 
+  pt.size = 0.1
+  ) + 
+  NoLegend()
+
+plot_2 <- SpatialFeaturePlot(
+  sp_obj, 
+  features = "nFeature_Spatial"
+  )
+
+plot_1 | plot_2
+```
+
+Again, here we can see how the number of genes per spot correlates with the
+structure of the tissue.
+
+* mt.content and rb.content: mitochondrial and ribosomal content per spot, respectively
+
+We have to compute this two values by calculating the percentage of reads per
+spot that belong to mitochondrial/ribosomal genes.
+
+```{r}
+# Mitochondrial content
+sp_obj[["mt.content"]] <- PercentageFeatureSet(
+  object = sp_obj,
+  pattern = "^MT-")
+
+summary(sp_obj[["mt.content"]])
+```
+
+```{r fig.width=10}
+# Ral contentibosomal
+sp_obj[["rb.content"]] <- PercentageFeatureSet(
+  object = sp_obj,
+  pattern = "^RPL|^RPS")
+
+summary(sp_obj[["rb.content"]])
+```
+
+```{r fig.width=12, fig.height=6}
+SpatialFeaturePlot(
+  sp_obj, 
+  features = c("mt.content", "rb.content")
+  )
+```
+
+In the case of spatial data, high mitochondrial content is not an indicator of
+bad quality spots. Therefore, on its own it is not a criterion to filter out spots.
+
+We are going to filter out genes that have no expression in the tissue.
+
+```{r}
+table(rowSums(as.matrix(sp_obj@assays$Spatial@counts)) == 0)
+keep_genes <- rowSums(as.matrix(sp_obj@assays$Spatial@counts)) != 0
+sp_obj <- sp_obj[keep_genes, ]
+```
+
+Furthermore, we will filter out spots with very low number of counts (< 500) before proceeding with the downstream analysis.
+
+```{r}
+sp_obj <- subset(
+  sp_obj,
+  subset = nCount_Spatial > 500
+)
+```
+
+## Preprocessing
+
+Similar to single-cell datasets, preprocessing for spatial data requires 
+normalization, identify variable features and scaling the counts.
+
+```{r}
+sp_obj <- NormalizeData(sp_obj) %>%
+  FindVariableFeatures(.) %>%
+  ScaleData(.)
+```
+
+Prior to clustering, we perform dimensionality reduction via PCA. We then look 
+at the elbow plot to assess the right number of principal components (PC) to
+use for downstream analysis.
+
+```{r}
+sp_obj <- RunPCA(sp_obj, npcs = 30)
+ElbowPlot(sp_obj, ndims = 30)
+```
+
+We see an elbow at 10 PC, after that the standard deviations are pretty much
+flat indicating that they aren't contributing much information. To reduce
+computational resources and noise we proceed with the first 20 PCs.
+
+```{r}
+sp_obj <- RunUMAP(
+  sp_obj,
+  reduction = "pca",
+  dims = 1:20
+)
+```
+
+## Clustering and visualization
+
+```{r}
+sp_obj <- FindNeighbors(
+  sp_obj, 
+  reduction = "pca", 
+  dims = 1:20) %>%
+  FindClusters(.,
+    resolution = 0.3
+  )
+```
+
+```{r fig.width=12, fig.height=6}
+plot_1 <- DimPlot(
+  sp_obj, 
+  label = TRUE
+  )
+
+plot_2 <- SpatialDimPlot(
+  sp_obj, 
+) +
+  NoLegend()
+
+plot_1 + plot_2
+```
+
+## Gene expression and annotation
+
+ESR1 and ERBB2 are the most common mutations in breast cancer, so one way of annotating the tissue is by looking at ESR1 and ERBB2 positive/negative regions.
+
+```{r fig.width=18, fig.height=6}
+SpatialFeaturePlot(
+  sp_obj, 
+  features = c("ESR1", "ERBB2"), 
+  alpha = c(0.1, 1)
+  ) + (SpatialDimPlot(
+  sp_obj,
+    label = TRUE
+) +
+  NoLegend())
+```
+
+From the expression of the two genes above we can do a high-level annotation.
+
+```{r}
+sp_obj@meta.data <- sp_obj@meta.data %>%
+  mutate(annotation = case_when(
+    Spatial_snn_res.0.3 == 0 ~ "Fibrotic",
+    Spatial_snn_res.0.3 == 1 ~ "Fibrotic",
+    Spatial_snn_res.0.3 == 2 ~ "HER2-/ESR1+",
+    Spatial_snn_res.0.3 == 3 ~ "HER2-/ESR1-",
+    Spatial_snn_res.0.3 == 4 ~ "HER2+/ESR1-",
+    Spatial_snn_res.0.3 == 5 ~ "HER2+/ESR1+",
+    Spatial_snn_res.0.3 == 6 ~ "HER2-/ESR1-",
+    Spatial_snn_res.0.3 == 7 ~ "HER2-/ESR1-",
+    Spatial_snn_res.0.3 == 8 ~ "HER2-/ESR1-"
+  ))
+```
+
+Look at the annotation
+```{r fig.width=6, fig.height=6}
+pal <- c("#ffb6db", "#004949", "#490092", "#920000", "#db6d00") # "#006ddb"
+names(pal) <- c("Fibrotic", "HER2-/ESR1-", "HER2-/ESR1+", "HER2+/ESR1-", "HER2+/ESR1+")
+
+SpatialDimPlot(
+  sp_obj,
+  group.by = "annotation",
+  cols = pal)
+```
+
+## Deconvolution
+
+We are going to use [SPOTlight](https://academic.oup.com/nar/article/49/9/e50/6129341?login=true) in conjunction with a subset of the [Tumor Immune Cell Atlas](https://genome.cshlp.org/content/31/10/1913) to deconvolute our spots and map immune populations to our tumor section.
+
+```{r}
+# load library
+library(SPOTlight)
+```
+
+Load downsampled version of the Tumor Immune Cell Atlas and explore the metadata
+we have. We are going to use annotation level 1 for the deconvolution 
+(`lv1_annot`). Moreover, since the origin of these cells is from different
+organs and papers we want to minize batch effect. To do so we will only select
+cells coming from one cancer type which has enough cells for all cell types.
+
+```{r}
+atlas <- readRDS("data/TICAtlas_downsample.rds")
+head(atlas@meta.data)
+table(atlas@meta.data$source)
+table(atlas@meta.data$lv1_annot)
+```
+
+First of all we need to compute the markers for the cell types using Seurat's
+function `FindAllMarkers`. 
+
+```{r eval = FALSE}
+Idents(atlas) <- "lv1_annot"
+  
+sc_markers <- FindAllMarkers(
+  object = atlas,
+  assay = "RNA",
+  slot = "data",
+  only.pos = TRUE
+  )
+
+sc_markers <- filter(
+  sc_markers,
+  avg_log2FC >= 0.7
+  )
+
+sc_markers <- filter(
+  sc_markers,
+  str_detect(string = gene,
+             pattern = "^Rps|^Rpl|^Mt-",
+             negate = TRUE
+             )
+  )
+saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
+```
+
+```{r}
+sc_markers <- readRDS("R_obj/filtered_atlas_markers.rds")
+sc_markers %>% 
+  group_by(cluster) %>% 
+  top_n(5, wt = avg_log2FC)
+```
+
+Run the deconvolution using the scRNAseq atlas and the spatial transcriptomics data.
+
+```{r eval = FALSE}
+decon_mtrx_ls <- spotlight_deconvolution(
+  se_sc = atlas,
+  counts_spatial = sp_obj@assays$Spatial@counts,
+  clust_vr = "lv1_annot",
+  cluster_markers = sc_markers,
+  hvg = 3000,
+  min_cont = 0,
+  assay = "RNA",
+  slot = "counts")
+
+saveRDS(decon_mtrx_ls, "R_obj/deconvolution_ls.rds")
+```
+
+```{r}
+decon_mtrx_ls <- readRDS("R_obj/deconvolution_ls.rds")
+```
+
+Before even looking at the decomposed spots we can gain insight on how well the model performed by looking at the topic profiles for the cell types.
+
+```{r}
+nmf_mod <- decon_mtrx_ls[[1]]
+decon_mtrx <- decon_mtrx_ls[[2]]
+
+rownames(decon_mtrx) <- colnames(sp_obj)
+
+# info on the NMF model
+nmf_mod[[1]]
+
+# deconvolution matrix
+head(decon_mtrx)
+```
+
+Look at how specific the topic profiles are for each cell type.
+
+```{r fig.height=10, fig.width=10}
+h <- NMF::coef(nmf_mod[[1]])
+rownames(h) <- paste("Topic", 1:nrow(h), sep = "_")
+topic_profile_plts <- SPOTlight::dot_plot_profiles_fun(
+  h = h,
+  train_cell_clust = nmf_mod[[2]])
+
+topic_profile_plts[[2]]
+```
+
+Let's now visualize how the deconvoluted spots on the the Seurat object.
+
+```{r}
+# keep on
+decon_mtrx <- decon_mtrx_ls[[2]]
+decon_mtrx <- decon_mtrx[, colnames(decon_mtrx) != "res_ss"]
+decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
+```
+
+
+```{r eval = FALSE}
+sp_obj@meta.data <- cbind(sp_obj@meta.data, decon_mtrx)
+saveRDS(sp_obj, "R_obj/breast_slide_deconvoluted.rds")
+```
+
+We have an object with the deconvolution information already added:
+
+```{r}
+sp_obj <- readRDS("R_obj/breast_slide_deconvoluted.rds")
+```
+
+The first thing we can do is look at the spatial scatterpie. This plot 
+represents each spot as an individual piechart where the proportion of each 
+cell type within that spot is represented.
+```{r}
+ct <- colnames(decon_mtrx)
+
+scatterpie_plot(
+    sp_obj = sp_obj,
+    cell_types_all = ct,
+    pie_scale = 0.3
+    ) +
+  coord_fixed(ratio = 1) +
+  scale_fill_manual(values = cell_type_palette)
+```
+
+Look at the spatial scatterpie by looking at cell types which are not present
+throughout the entire tissue.
+
+```{r}
+# keep only cell types that are present in less than 80% of the spots
+keep_0.8 <- colSums(sp_obj@meta.data[, ct] > 0) < 0.8 * ncol(sp_obj)
+# but not those that were not found on the tissue
+keep_g0 <- colSums(sp_obj@meta.data[, ct] > 0) > 0
+
+# select cell types fullfiling the conditions
+ct_var <- colnames(sp_obj@meta.data[, ct])[keep_0.8 & keep_g0]
+
+ct_var
+```
+
+
+```{r}
+scatterpie_plot(
+  sp_obj = sp_obj,
+  cell_types_all = ct_var,
+  pie_scale = 0.3
+  ) +
+  coord_fixed(ratio = 1) +
+  scale_fill_manual(values = cell_type_palette)
+```
+
+Lets now see the frequencies of selected cell types across the regions in the tissue. We will focus on cytotoxic T cells and macrophages as they can give an idea of how infiltrated the tumor can be. 
+
+```{r}
+VlnPlot(
+  sp_obj,
+  features = c("CD8.terminally.exhausted", "TAMs.proinflamatory"),
+  group.by = "annotation"
+)
+```
+
+```{r}
+plot_1 <- SpatialPlot(
+  sp_obj, 
+  pt.size = 0
+  ) + 
+  NoLegend()
+
+plot_2 <- SpatialDimPlot(
+  sp_obj, 
+  group.by = "annotation"
+)
+
+plot_1 + plot_2
+```
+
+We can see that in region of cluster 2 we have a presence of both exhausted T cells and proinflamatory macrophages.
+
+*** 
+
+<a href="#top">Back to top</a>
+
+```{r}
+sessionInfo()
+```
