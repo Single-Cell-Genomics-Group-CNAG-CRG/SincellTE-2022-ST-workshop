@@ -364,6 +364,7 @@ table(atlas@meta.data$source)
 table(atlas@meta.data$lv1_annot)
 ```
 
+### Marker genes
 First of all we need to compute the markers for the cell types using Seurat's
 function `FindAllMarkers`. 
 
@@ -380,12 +381,12 @@ sc_markers <- filter(
   sc_markers,
   avg_log2FC >= 0.7)
 
-sc_markers <- filter(
-  sc_markers,
-  str_detect(string = gene,
-             pattern = "^Rps|^Rpl|^Mt-",
-             negate = TRUE)
-  )
+# sc_markers <- filter(
+#   sc_markers,
+#   str_detect(string = gene,
+#              pattern = "^Rps|^Rpl|^Mt-",
+#              negate = TRUE)
+#   )
 saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 ```
 
@@ -396,6 +397,7 @@ sc_markers %>%
   top_n(5, wt = avg_log2FC)
 ```
 
+### Run Deconvolution
 Run the deconvolution using the scRNAseq atlas and the spatial transcriptomics data.
 
 ```{r eval = FALSE}
@@ -416,6 +418,7 @@ saveRDS(decon_mtrx_ls, "R_obj/deconvolution_ls.rds")
 decon_mtrx_ls <- readRDS("R_obj/deconvolution_ls.rds")
 ```
 
+### Deconvolution assesment
 Before even looking at the decomposed spots we can gain insight on how well the model performed by looking at the topic profiles for the cell types.
 
 ```{r}
@@ -431,7 +434,9 @@ nmf_mod[[1]]
 head(decon_mtrx)
 ```
 
-Look at how specific the topic profiles are for each cell type.
+Look at how specific the topic profiles are for each cell type. Ideally we want
+to see how each cell type has its own unique topic profile. This means the model
+has learnt a unique gene signature for that cell type.
 
 ```{r fig.height=10, fig.width=10}
 h <- NMF::coef(nmf_mod[[1]])
@@ -443,6 +448,28 @@ topic_profile_plts <- SPOTlight::dot_plot_profiles_fun(
 topic_profile_plts[[2]]
 ```
 
+We also want to take a look at the topic profiles of the individual cells. 
+We want to see how all the cells from the same cell type share the same topic
+profiles to make sure the learned signature is robust. In this plot each facet 
+shows all the cells from the same cell type.
+```{r fig.width=25, fig.height=25}
+topic_profile_plts[[1]] +
+  theme(axis.text.x = element_blank())
+```
+
+Lastly we can take a look at which genes the model learned for each topic.
+Higher values indicate that the gene is more relevant for that topic. 
+In the below table we can see how the top genes for topic 1 are characteristic
+for B cells (i.e. *CD79A*, *CD79B*, *MS4A1*, *IGHD*...).
+```{r basis-dt}
+sign <- basis(nmf_mod[[1]])
+colnames(sign) <- paste0("Topic", seq_len(ncol(sign)))
+
+# This can be dynamically visualized with DT as shown below
+DT::datatable(sign, filter = "top")
+```
+
+### Deconvolution visualization
 Let's now visualize how the deconvoluted spots on the the Seurat object.
 
 ```{r}
@@ -450,6 +477,8 @@ Let's now visualize how the deconvoluted spots on the the Seurat object.
 decon_mtrx <- decon_mtrx_ls[[2]]
 decon_mtrx <- decon_mtrx[, colnames(decon_mtrx) != "res_ss"]
 decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
+# Set as 0 those cell types that contribute <1% to the spot
+decon_mtrx[decon_mtrx < 0.01] <- 0
 ```
 
 
@@ -471,15 +500,17 @@ cell type within that spot is represented.
 ct <- colnames(decon_mtrx)
 
 scatterpie_plot(
-    sp_obj = sp_obj,
+    se_obj = sp_obj,
     cell_types_all = ct,
     pie_scale = 0.3) +
   coord_fixed(ratio = 1) +
   scale_fill_manual(values = cell_type_palette)
 ```
 
-Look at the spatial scatterpie by looking at cell types which are not present
-throughout the entire tissue.
+As we can see when we look at all the cell types at the same time we are not 
+able to discern clear patterns. To improve the visualization we will remove 
+those cell types that are found in >80% of the spot and keep those that aren't
+ubiquitouslyy expressed.
 
 ```{r}
 # keep only cell types that are present in less than 80% of the spots
@@ -492,7 +523,7 @@ ct_var <- colnames(sp_obj@meta.data[, ct])[keep_0.8 & keep_g0]
 ct_var
 ```
 
-
+Plot the spatial scatterpie only with the cell types of interest
 ```{r}
 scatterpie_plot(
   sp_obj = sp_obj,
@@ -500,6 +531,22 @@ scatterpie_plot(
   pie_scale = 0.3) +
   coord_fixed(ratio = 1) +
   scale_fill_manual(values = cell_type_palette)
+```
+
+Next, we can visualize the individual cell type proportions on the spatial slide. 
+```{r fig.width=25, fig.height=30}
+scaleFUN <- function(x) sprintf("%.2f", x)
+
+SpatialPlot(
+  object = sp_obj,
+  features = ct,
+  alpha = c(0, 1),
+  ncol = 5) &
+  scale_fill_gradientn(
+    colors = grDevices::heat.colors(10, rev = TRUE),
+    # 2 decimals in the legend
+    labels = scaleFUN,
+    n.breaks = 4)
 ```
 
 Lets now see the frequencies of selected cell types across the regions in the tissue. We will focus on cytotoxic T cells and macrophages as they can give an idea of how infiltrated the tumor can be. 
@@ -512,16 +559,11 @@ VlnPlot(
 ```
 
 ```{r}
-plot_1 <- SpatialPlot(
-  sp_obj, 
-  pt.size = 0) + 
-  NoLegend()
-
-plot_2 <- SpatialDimPlot(
+plt_annot <- SpatialDimPlot(
   sp_obj, 
   group.by = "annotation")
 
-plot_1 + plot_2
+img | plt_annot
 ```
 
 We can see that in region of cluster 2 we have a presence of both exhausted T cells and proinflamatory macrophages.
