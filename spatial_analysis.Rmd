@@ -33,7 +33,7 @@ curl -O https://cf.10xgenomics.com/samples/spatial-exp/1.1.0/V1_Breast_Cancer_Bl
 
 These are the libraries we are going to use:
 
-```{r libraries, echo = FALSE}
+```{r libraries}
 library(tidyverse)
 library(Seurat)
 library(patchwork)
@@ -85,7 +85,7 @@ se_obj@images$slice1@scale.factors
 
 As with single-cell objects, we have some important features that we can use to filter out bad quality spots.
 
-* nCount_Spatial: number of UMIs per spot
+* *nCount_Spatial*: number of UMIs per spot
 
 ```{r fig.width=12}
 plot_1 <- VlnPlot(
@@ -105,7 +105,7 @@ plot_1 | plot_2
 
 The variability in the distribution of UMIs is related to the tissue architecture, i.e. tumoral regions are more densely packked and thus contain spots with higher counts.
 
-* nFeature_Spatial: number of genes per spot
+* *nFeature_Spatial*: number of genes per spot
 
 ```{r fig.width=10}
 plot_1 <- VlnPlot(
@@ -125,7 +125,7 @@ plot_1 | plot_2
 
 Here we can also see how the number of genes per spot correlates with the structure of the tissue
 
-* mt.content and rb.content: mitochondrial and ribosomal content per spot, respectively
+* *mt.content* and *rb.content*: mitochondrial and ribosomal content per spot, respectively
 
 We have to compute this two values by calculating the percentage of reads per spot that belong to mitochondrial/ribosomal genes.
 
@@ -166,6 +166,12 @@ se_obj <- se_obj[keep_genes, ]
 
 Furthermore, we will filter out spots with very low number of counts (< 500) before proceeding with the downstream analysis.
 
+Before filtering:
+
+```{r}
+se_obj
+```
+
 ```{r}
 se_obj <- subset(
   se_obj,
@@ -173,14 +179,33 @@ se_obj <- subset(
 )
 ```
 
+After filtering:
+
+```{r}
+se_obj
+```
+
 ## Preprocessing
 
 Similar to single-cell datasets, preprocessing for spatial data requires normalizing, finding variable features and scaling the counts.
 
 ```{r}
-se_obj <- NormalizeData(se_obj)
-se_obj <- FindVariableFeatures(se_obj)
-se_obj <- ScaleData(se_obj)
+se_obj <- NormalizeData(
+  se_obj,
+  normalization.method = "LogNormalize",
+  scale.factor = 10000
+  )
+
+se_obj <- FindVariableFeatures(
+  se_obj,
+  nfeatures = 2000,
+  selection.method = "vst"
+  )
+
+se_obj <- ScaleData(
+  se_obj,
+  features = VariableFeatures(se_obj)
+  )
 ```
 
 Prior to clustering, we perform dimensionality reduction.
