@@ -121,7 +121,7 @@ remove them since these are artifacts of the experiment.
 As with single-cell objects, we have some important features that we can use to 
 filter out bad quality spots.
 
-* nCount_Spatial: number of UMIs per spot
+* *nCount_Spatial*: number of UMIs per spot
 
 ```{r fig.width=18, fig.height=6}
 umi_vln_plt <- VlnPlot(
@@ -141,7 +141,7 @@ The variability in the distribution of UMIs is related to the tissue
 architecture, i.e. tumoral regions have a higher cell density than fibrotic
 regions and thus overlapping spotscontain higher counts.
 
-* nFeature_Spatial: number of genes per spot
+* *nFeature_Spatial*: number of genes per spot
 
 ```{r fig.width=18, fig.height=6}
 feat_vln_plt <- VlnPlot(
@@ -160,7 +160,7 @@ feat_vln_plt | feat_sp_plt | img
 Again, here we can see how the number of genes per spot correlates with the
 structure of the tissue.
 
-* mt.content and rb.content: mitochondrial and ribosomal content per spot, respectively
+* *mt.content* and *rb.content*: mitochondrial and ribosomal content per spot, respectively
 
 We have to compute this two values by calculating the percentage of reads per
 spot that belong to mitochondrial/ribosomal genes.
@@ -210,11 +210,23 @@ Furthermore, we set a threshold to filter out spots with very low number of
 counts (< 500) before proceeding with the downstream analysis. As we can see 
 there are no spots with <500 UMIs so we will not remove any of them.
 
+Before filtering:
+
+```{r}
+se_obj
+```
+
 ```{r}
 table(colSums(as.matrix(sp_obj@assays$Spatial@counts)) == 0)
 sp_obj <- subset(
   sp_obj,
   subset = nCount_Spatial > 500)
+```
+
+After filtering:
+
+```{r}
+se_obj
 ```
 
 ## Preprocessing
