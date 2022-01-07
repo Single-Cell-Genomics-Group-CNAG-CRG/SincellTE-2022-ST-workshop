@@ -5,6 +5,10 @@ author:
   affiliation: 
   - Centro Nacional de Análisis Genómico (CNAG)
   email: paula.nieto@cnag.crg.eu
+- name: Marc Elosua Bayes
+  affiliation: 
+  - Centro Nacional de Análisis Genómico (CNAG)
+  email: marc.elosua@cnag.crg.eu
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: html_document
 ---
@@ -66,7 +70,7 @@ spots that overlap with the tissue as determined by `spaceranger`.
 If we expect there to be overpermabilization of the tissue or want to get a more
 general look we can load the raw HDF5 file instead. The raw file contains the
 matrix for all 5.000 spots comprising the capture area.
-```{r}
+```{r load-spatial}
 sp_obj <- Load10X_Spatial(
   data.dir = "data",
   # Name of H5 file containing the feature barcode matrix
@@ -104,7 +108,8 @@ We can visualize the image as follows:
   NoLegend())
 ```
 
-* Scaling factors that relate the original high resolution image to the lower resolution image used here for visualization.
+* Scaling factors that relate the original high resolution image to the lower
+resolution image used here for visualization.
 
 ```{r}
 sp_obj@images$slice1@scale.factors
@@ -238,7 +243,7 @@ different spot complexities observed. Spots overlapping more cell-dense regions
 will have more UMIs. If we use standard Log Normalization we are removing this
 biological signal from the dataset.
 
-```{r}
+```{r sct}
 sp_obj <- SCTransform(
   sp_obj,
   # assay to pull the count data from
@@ -254,7 +259,7 @@ Prior to clustering, we perform dimensionality reduction via PCA. We then look
 at the elbow plot to assess the right number of principal components (PC) to
 use for downstream analysis.
 
-```{r}
+```{r pca}
 sp_obj <- RunPCA(sp_obj, npcs = 50)
 ElbowPlot(sp_obj, ndims = 50)
 ```
@@ -265,7 +270,7 @@ computational resources and noise we proceed with the first 15 PCs and add
 another 10 for a total of 25 PCs to make sure we are not loosing biological
 signal while reducing the noise.
 
-```{r}
+```{r umap}
 sp_obj <- RunUMAP(
   sp_obj,
   reduction = "pca",
@@ -276,7 +281,7 @@ sp_obj <- RunUMAP(
 
 Next we compute the K nearest neighbors and find an optimal number of clusters
 using shared nearest neighbor Louvain modularity based clustering.
-```{r}
+```{r clustering}
 sp_obj <- FindNeighbors(
   sp_obj, 
   reduction = "pca", 
@@ -316,7 +321,7 @@ SpatialFeaturePlot(
 
 From the expression of the two genes above we can do a high-level annotation.
 
-```{r}
+```{r annotation}
 sp_obj@meta.data <- sp_obj@meta.data %>%
   mutate(annotation = case_when(
     SCT_snn_res.0.3 == 0 ~ "Fibrotic",
@@ -346,7 +351,7 @@ SpatialDimPlot(
 
 We are going to use [SPOTlight](https://academic.oup.com/nar/article/49/9/e50/6129341?login=true) in conjunction with a subset of the [Tumor Immune Cell Atlas](https://genome.cshlp.org/content/31/10/1913) to deconvolute our spots and map immune populations to our tumor section.
 
-```{r}
+```{r spotlight}
 # load library
 library(SPOTlight)
 ```
@@ -357,7 +362,7 @@ we have. We are going to use annotation level 1 for the deconvolution
 organs and papers we want to minize batch effect. To do so we will only select
 cells coming from one cancer type which has enough cells for all cell types.
 
-```{r}
+```{r load-sc}
 atlas <- readRDS("data/TICAtlas_downsample.rds")
 head(atlas@meta.data)
 table(atlas@meta.data$source)
@@ -368,7 +373,7 @@ table(atlas@meta.data$lv1_annot)
 First of all we need to compute the markers for the cell types using Seurat's
 function `FindAllMarkers`. 
 
-```{r eval = FALSE}
+```{r marker-genes, eval = FALSE}
 Idents(atlas) <- "lv1_annot"
   
 sc_markers <- FindAllMarkers(
@@ -377,9 +382,9 @@ sc_markers <- FindAllMarkers(
   slot = "data",
   only.pos = TRUE)
 
-sc_markers <- filter(
-  sc_markers,
-  avg_log2FC >= 0.7)
+# sc_markers <- filter(
+#   sc_markers,
+#   avg_log2FC >= 0.7)
 
 # sc_markers <- filter(
 #   sc_markers,
@@ -400,7 +405,7 @@ sc_markers %>%
 ### Run Deconvolution
 Run the deconvolution using the scRNAseq atlas and the spatial transcriptomics data.
 
-```{r eval = FALSE}
+```{r deconvolution, eval = FALSE}
 decon_mtrx_ls <- spotlight_deconvolution(
   se_sc = atlas,
   counts_spatial = sp_obj@assays$Spatial@counts,
