@@ -1,17 +1,22 @@
 ---
 title: "Advanced Spatial Analysis"
 author:
-- name: Paula Nieto
+- name: Marc Elosua & Paula Nieto
   affiliation: 
   - Centro Nacional de Análisis Genómico (CNAG)
-  email: paula.nieto@cnag.crg.eu
-date: '`r format(Sys.Date(), "%B %d, %Y")`'
-output: html_document
+  email: marc.elosua@cnag.crg.eu & paula.nieto@cnag.crg.eu
+date: '`r format(Sys.Date(), "%d/%m/%Y")`'
+output: 
+  html_document:
+    includes:
+      in_header: banner.html
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
+
+
 
 # Analysis of Spatial Data
 
@@ -45,7 +50,6 @@ library(patchwork)
 set.seed(12345)
 
 # create palette for the cell types from the pals package
-# cell_type_palette <- as.vector(pals::polychrome())
 cell_type_palette <- c(
   "#5A5156", "#E4E1E3", "#F6222E", "#FE00FA",
   "#16FF32", "#3283FE", "#FEAF16", "#B00068",
@@ -66,17 +70,15 @@ spots that overlap with the tissue as determined by `spaceranger`.
 If we expect there to be overpermabilization of the tissue or want to get a more
 general look we can load the raw HDF5 file instead. The raw file contains the
 matrix for all 5.000 spots comprising the capture area.
+
 ```{r}
 sp_obj <- Load10X_Spatial(
-  data.dir = "data",
-  # Name of H5 file containing the feature barcode matrix
-  filename = "filtered_feature_bc_matrix.h5",
-  # Name of assay
-  assay = "Spatial",
-  # Name of the image
-  slice = "slice1",
-  # Only keep spots that have been determined to be over tissue
-  filter.matrix = TRUE)
+  data.dir = "data", # Directory where these data is stored
+  filename = "filtered_feature_bc_matrix.h5", # Name of H5 file containing the feature barcode matrix
+  assay = "Spatial", # Name of assay
+  slice = "slice1",   # Name of the image
+  filter.matrix = TRUE # Only keep spots that have been determined to be over tissue
+  )
 ```
 
 The visium data from 10x consists is stored in a Seurat object. This object has 
@@ -91,17 +93,21 @@ sp_obj[["Spatial"]][1:5, 1:5]
 * H&E Image of the tissue slice (obtained from staining during sample processing in the lab)
 
 It adds one slot which contains the images of the Visium experiments as seen below:
+
 ```{r}
 sp_obj@images
 ```
 
-We can visualize the image as follows:
+We can visualize the image as follows (we will also store this for later):
+
 ```{r fig.width=5, fig.height=5}
 (img <- SpatialPlot(
-  sp_obj, 
-  pt.size = 0,
-  crop = FALSE) + 
-  NoLegend())
+  sp_obj, # Name of the Seurat Object
+  pt.size = 0, # Point size to see spots on the tissue
+  crop = FALSE # Wether to crop to see only tissue section
+  ) + 
+  NoLegend()
+)
 ```
 
 * Scaling factors that relate the original high resolution image to the lower resolution image used here for visualization.
@@ -139,7 +145,7 @@ umi_vln_plt | umi_sp_plt | img
 
 The variability in the distribution of UMIs is related to the tissue
 architecture, i.e. tumoral regions have a higher cell density than fibrotic
-regions and thus overlapping spotscontain higher counts.
+regions and thus overlapping spots contain higher counts.
 
 * *nFeature_Spatial*: number of genes per spot
 
@@ -196,19 +202,6 @@ low quality regions but seem to be reflecting the biological structure of the
 tissue.
 
 ### Gene filtering
-We are going to filter out genes that have no expression in the tissue.
-
-```{r}
-table(rowSums(as.matrix(sp_obj@assays$Spatial@counts)) == 0)
-keep_genes <- rowSums(as.matrix(sp_obj@assays$Spatial@counts)) != 0
-sp_obj <- sp_obj[keep_genes, ]
-```
-We see how we remove 11.678 genes while keeping 24.923.
-
-### Spot filtering
-Furthermore, we set a threshold to filter out spots with very low number of
-counts (< 500) before proceeding with the downstream analysis. As we can see 
-there are no spots with <500 UMIs so we will not remove any of them.
 
 Before filtering:
 
@@ -216,8 +209,25 @@ Before filtering:
 sp_obj
 ```
 
+We are going to filter out genes that have no expression in the tissue.
+
 ```{r}
-table(colSums(as.matrix(sp_obj@assays$Spatial@counts)) == 0)
+table(rowSums(as.matrix(sp_obj@assays$Spatial@counts)) == 0)
+keep_genes <- rowSums(as.matrix(sp_obj@assays$Spatial@counts)) != 0
+sp_obj <- sp_obj[keep_genes, ]
+```
+
+We see how we remove 11.678 genes while keeping 24.923.
+
+### Spot filtering
+
+Furthermore, we set a threshold to filter out spots with very low number of
+counts (< 500) before proceeding with the downstream analysis. As we can see 
+there are no spots with <500 UMIs so we will not remove any of them.
+
+
+```{r}
+table(colSums(as.matrix(sp_obj@assays$Spatial@counts)) < 500)
 sp_obj <- subset(
   sp_obj,
   subset = nCount_Spatial > 500)
@@ -241,13 +251,11 @@ biological signal from the dataset.
 ```{r}
 sp_obj <- SCTransform(
   sp_obj,
-  # assay to pull the count data from
-  assay = "Spatial",
-  # Number of subsampling Spots used to build NB regression, in this case use all
-  ncells = ncol(sp_obj),
-  # variable features to use after ranking by residual variance
-  variable.features.n = 3000,
-  verbose = FALSE)
+  assay = "Spatial", # assay to pull the count data from
+  ncells = ncol(sp_obj), # Number of subsampling Spots used to build NB regression, in this case use all
+  variable.features.n = 3000,  # variable features to use after ranking by residual variance
+  verbose = FALSE
+  )
 ```
 
 Prior to clustering, we perform dimensionality reduction via PCA. We then look 
@@ -255,8 +263,15 @@ at the elbow plot to assess the right number of principal components (PC) to
 use for downstream analysis.
 
 ```{r}
-sp_obj <- RunPCA(sp_obj, npcs = 50)
-ElbowPlot(sp_obj, ndims = 50)
+sp_obj <- RunPCA(
+  sp_obj, 
+  npcs = 50
+  )
+
+ElbowPlot(
+  sp_obj, 
+  ndims = 50
+  )
 ```
 
 We see an elbow at 15 PC, after that the standard deviations are pretty much
@@ -269,30 +284,38 @@ signal while reducing the noise.
 sp_obj <- RunUMAP(
   sp_obj,
   reduction = "pca",
-  dims = 1:25)
+  dims = 1:25
+  )
 ```
 
 ## Clustering and visualization
 
 Next we compute the K nearest neighbors and find an optimal number of clusters
 using shared nearest neighbor Louvain modularity based clustering.
+
 ```{r}
 sp_obj <- FindNeighbors(
   sp_obj, 
   reduction = "pca", 
-  dims = 1:20) %>%
-  FindClusters(.,
-    resolution = 0.3)
+  dims = 1:20
+  )
+
+sp_obj <- FindClusters(
+  sp_obj,
+  resolution = 0.3
+  )
 ```
 
 Look at the clustering in the UMAP space and on the tissue:
 ```{r fig.width=12, fig.height=6}
 umap_plt <- DimPlot(
   sp_obj, 
-  label = TRUE)
+  label = TRUE
+  )
 
 sp_plt <- SpatialDimPlot(
-  sp_obj) +
+  sp_obj
+  ) +
   NoLegend()
 
 umap_plt + sp_plt
@@ -300,7 +323,7 @@ umap_plt + sp_plt
 
 ## Gene expression and annotation
 
-ESR1 and ERBB2 are the two of the most common mutations in breast cancer, so one
+ESR1 and ERBB2 (HER2) are the two of the most common mutations in breast cancer, so one
 way of annotating the tissue is by looking at ESR1 and ERBB2 positive/negative 
 regions.
 
@@ -308,9 +331,12 @@ regions.
 SpatialFeaturePlot(
   sp_obj, 
   features = c("ESR1", "ERBB2"), 
-  alpha = c(0.1, 1)) + (SpatialDimPlot(
+  alpha = c(0.1, 1)
+  ) + 
+  (SpatialDimPlot(
     sp_obj,
-    label = TRUE) +
+    label = TRUE
+    ) +
   NoLegend())
 ```
 
@@ -333,13 +359,15 @@ sp_obj@meta.data <- sp_obj@meta.data %>%
 
 Look at the annotation
 ```{r fig.width=6, fig.height=6}
-pal <- c("#ffb6db", "#004949", "#490092", "#920000", "#db6d00") # "#006ddb"
-names(pal) <- c("Fibrotic", "HER2-/ESR1-", "HER2-/ESR1+", "HER2+/ESR1-", "HER2+/ESR1+")
+# We will define a palette (this is optional)
+annot_pal <- c("#ffb6db", "#004949", "#490092", "#920000", "#db6d00")
+names(annot_pal) <- c("Fibrotic", "HER2-/ESR1-", "HER2-/ESR1+", "HER2+/ESR1-", "HER2+/ESR1+")
 
 SpatialDimPlot(
   sp_obj,
   group.by = "annotation",
-  cols = pal)
+  cols = annot_pal
+  )
 ```
 
 ## Deconvolution
@@ -349,6 +377,7 @@ We are going to use [SPOTlight](https://academic.oup.com/nar/article/49/9/e50/61
 ```{r}
 # load library
 library(SPOTlight)
+library(NMF)
 ```
 
 Load downsampled version of the Tumor Immune Cell Atlas and explore the metadata
@@ -358,9 +387,8 @@ organs and papers we want to minize batch effect. To do so we will only select
 cells coming from one cancer type which has enough cells for all cell types.
 
 ```{r}
-atlas <- readRDS("data/TICAtlas_downsample.rds")
+atlas <- readRDS("R_obj/TICAtlas_downsample.rds")
 head(atlas@meta.data)
-table(atlas@meta.data$source)
 table(atlas@meta.data$lv1_annot)
 ```
 
@@ -381,12 +409,6 @@ sc_markers <- filter(
   sc_markers,
   avg_log2FC >= 0.7)
 
-# sc_markers <- filter(
-#   sc_markers,
-#   str_detect(string = gene,
-#              pattern = "^Rps|^Rpl|^Mt-",
-#              negate = TRUE)
-#   )
 saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 ```
 
@@ -394,7 +416,8 @@ saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 sc_markers <- readRDS("R_obj/filtered_atlas_markers.rds")
 sc_markers %>% 
   group_by(cluster) %>% 
-  top_n(5, wt = avg_log2FC)
+  top_n(5, wt = avg_log2FC) %>% 
+  DT::datatable()
 ```
 
 ### Run Deconvolution
@@ -452,6 +475,7 @@ We also want to take a look at the topic profiles of the individual cells.
 We want to see how all the cells from the same cell type share the same topic
 profiles to make sure the learned signature is robust. In this plot each facet 
 shows all the cells from the same cell type.
+
 ```{r fig.width=25, fig.height=25}
 topic_profile_plts[[1]] +
   theme(axis.text.x = element_blank())
@@ -461,6 +485,7 @@ Lastly we can take a look at which genes the model learned for each topic.
 Higher values indicate that the gene is more relevant for that topic. 
 In the below table we can see how the top genes for topic 1 are characteristic
 for B cells (i.e. *CD79A*, *CD79B*, *MS4A1*, *IGHD*...).
+
 ```{r basis-dt}
 sign <- basis(nmf_mod[[1]])
 colnames(sign) <- paste0("Topic", seq_len(ncol(sign)))
@@ -470,6 +495,7 @@ DT::datatable(sign, filter = "top")
 ```
 
 ### Deconvolution visualization
+
 Let's now visualize how the deconvoluted spots on the the Seurat object.
 
 ```{r}
@@ -481,8 +507,8 @@ decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
 decon_mtrx[decon_mtrx < 0.01] <- 0
 ```
 
-
 ```{r eval = FALSE}
+# Add deconvolution results to Seurat object
 sp_obj@meta.data <- cbind(sp_obj@meta.data, decon_mtrx)
 saveRDS(sp_obj, "R_obj/breast_slide_deconvoluted.rds")
 ```
@@ -526,7 +552,7 @@ ct_var
 Plot the spatial scatterpie only with the cell types of interest
 ```{r}
 scatterpie_plot(
-  sp_obj = sp_obj,
+  se_obj = sp_obj,
   cell_types_all = ct_var,
   pie_scale = 0.3) +
   coord_fixed(ratio = 1) +
@@ -534,12 +560,13 @@ scatterpie_plot(
 ```
 
 Next, we can visualize the individual cell type proportions on the spatial slide. 
+
 ```{r fig.width=25, fig.height=30}
 scaleFUN <- function(x) sprintf("%.2f", x)
 
 SpatialPlot(
   object = sp_obj,
-  features = ct,
+  features = ct_var,
   alpha = c(0, 1),
   ncol = 5) &
   scale_fill_gradientn(
@@ -549,24 +576,37 @@ SpatialPlot(
     n.breaks = 4)
 ```
 
-Lets now see the frequencies of selected cell types across the regions in the tissue. We will focus on cytotoxic T cells and macrophages as they can give an idea of how infiltrated the tumor can be. 
+Lets now see the frequencies of selected cell types across the regions in the tissue. 
+We will focus on pre-exhausted T cells and macrophages as they can give an idea of how 
+infiltrated the tumor can be. 
 
 ```{r}
 VlnPlot(
   sp_obj,
-  features = c("CD8.terminally.exhausted", "TAMs.proinflamatory"),
-  group.by = "annotation")
+  features = c("CD8.pre.exhausted", "TAMs.proinflamatory"),
+  group.by = "annotation",
+  cols = annot_pal
+  )
 ```
 
 ```{r}
 plt_annot <- SpatialDimPlot(
   sp_obj, 
-  group.by = "annotation")
+  group.by = "annotation",
+  cols = annot_pal
+  )
 
 img | plt_annot
 ```
 
-We can see that in region of cluster 2 we have a presence of both exhausted T cells and proinflamatory macrophages.
+We can see that in the HER2+/ESR1- (dark red) region we have an abundance of pre-exhausted CD8 
+T cells as well as pro-inflamatory macrophages. The presence of both subtypes at the 
+same time in a tumor region, can be indicative of the presence of a highly infiltrated
+tumor, often referred to as a "hot" tumor.
+
+This type of tumors often have a better response to treatment, opposite to cold regions,
+where little to no immune cells are able to infiltrate the tumor, conforming a immune
+excluded section, often linked to worse treatment response.
 
 *** 
 
