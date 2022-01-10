@@ -47,7 +47,7 @@ library(patchwork)
 
 ```{r seed}
 # set seed for reproducibility purposes
-set.seed(12345)
+set.seed(1243)
 
 # create palette for the cell types from the pals package
 cell_type_palette <- c(
@@ -70,12 +70,7 @@ spots that overlap with the tissue as determined by `spaceranger`.
 If we expect there to be overpermabilization of the tissue or want to get a more
 general look we can load the raw HDF5 file instead. The raw file contains the
 matrix for all 5.000 spots comprising the capture area.
-<<<<<<< HEAD
 ```{r load-spatial}
-=======
-
-```{r}
->>>>>>> 8ad9e65083e77fbacba23a75a40800ff5485ffbb
 sp_obj <- Load10X_Spatial(
   data.dir = "data", # Directory where these data is stored
   filename = "filtered_feature_bc_matrix.h5", # Name of H5 file containing the feature barcode matrix
@@ -267,11 +262,6 @@ Prior to clustering, we perform dimensionality reduction via PCA. We then look
 at the elbow plot to assess the right number of principal components (PC) to
 use for downstream analysis.
 
-<<<<<<< HEAD
-```{r pca}
-sp_obj <- RunPCA(sp_obj, npcs = 50)
-ElbowPlot(sp_obj, ndims = 50)
-=======
 ```{r}
 sp_obj <- RunPCA(
   sp_obj, 
@@ -282,7 +272,6 @@ ElbowPlot(
   sp_obj, 
   ndims = 50
   )
->>>>>>> 8ad9e65083e77fbacba23a75a40800ff5485ffbb
 ```
 
 We see an elbow at 15 PC, after that the standard deviations are pretty much
@@ -303,12 +292,7 @@ sp_obj <- RunUMAP(
 
 Next we compute the K nearest neighbors and find an optimal number of clusters
 using shared nearest neighbor Louvain modularity based clustering.
-<<<<<<< HEAD
 ```{r clustering}
-=======
-
-```{r}
->>>>>>> 8ad9e65083e77fbacba23a75a40800ff5485ffbb
 sp_obj <- FindNeighbors(
   sp_obj, 
   reduction = "pca", 
@@ -401,13 +385,8 @@ we have. We are going to use annotation level 1 for the deconvolution
 organs and papers we want to minize batch effect. To do so we will only select
 cells coming from one cancer type which has enough cells for all cell types.
 
-<<<<<<< HEAD
 ```{r load-sc}
-atlas <- readRDS("data/TICAtlas_downsample.rds")
-=======
-```{r}
-atlas <- readRDS("R_obj/TICAtlas_downsample.rds")
->>>>>>> 8ad9e65083e77fbacba23a75a40800ff5485ffbb
+atlas <- readRDS("R_obj/downsample_atlas_sincellTE.rds")
 head(atlas@meta.data)
 table(atlas@meta.data$lv1_annot)
 ```
@@ -434,7 +413,7 @@ saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 
 ```{r}
 sc_markers <- readRDS("R_obj/filtered_atlas_markers.rds")
-sc_markers %>% 
+sc_markers %>%
   group_by(cluster) %>% 
   top_n(5, wt = avg_log2FC) %>% 
   DT::datatable()
@@ -453,7 +432,7 @@ decon_mtrx_ls <- spotlight_deconvolution(
   min_cont = 0,
   assay = "RNA",
   slot = "counts")
-
+# [1] "Time to train NMF model was 28.06mins"
 saveRDS(decon_mtrx_ls, "R_obj/deconvolution_ls.rds")
 ```
 
@@ -523,8 +502,8 @@ Let's now visualize how the deconvoluted spots on the the Seurat object.
 decon_mtrx <- decon_mtrx_ls[[2]]
 decon_mtrx <- decon_mtrx[, colnames(decon_mtrx) != "res_ss"]
 decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
-# Set as 0 those cell types that contribute <1% to the spot
-decon_mtrx[decon_mtrx < 0.01] <- 0
+# Set as 0 those cell types that contribute <3% to the spot
+decon_mtrx[decon_mtrx < 0.02] <- 0
 ```
 
 ```{r eval = FALSE}
@@ -586,9 +565,9 @@ scaleFUN <- function(x) sprintf("%.2f", x)
 
 SpatialPlot(
   object = sp_obj,
-  features = ct_var,
+  features = ct,
   alpha = c(0, 1),
-  ncol = 5) &
+  ncol = 5, image.alpha = 0) &
   scale_fill_gradientn(
     colors = grDevices::heat.colors(10, rev = TRUE),
     # 2 decimals in the legend
@@ -601,9 +580,16 @@ We will focus on pre-exhausted T cells and macrophages as they can give an idea 
 infiltrated the tumor can be. 
 
 ```{r}
+# VlnPlot(
+#   sp_obj,
+#   features = c("CD8.pre.exhausted", "TAMs.proinflamatory"),
+#   group.by = "annotation",
+#   cols = annot_pal
+#   )
+
 VlnPlot(
   sp_obj,
-  features = c("CD8.pre.exhausted", "TAMs.proinflamatory"),
+  features = c("Monocytes", "TAMs.C1QC", "TAMs.proinflamatory", "CD8.terminally.exhausted", "CD8.pre.exhausted"),
   group.by = "annotation",
   cols = annot_pal
   )
