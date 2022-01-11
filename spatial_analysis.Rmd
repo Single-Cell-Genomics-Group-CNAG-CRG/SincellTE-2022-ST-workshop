@@ -348,7 +348,7 @@ sp_obj@meta.data <- sp_obj@meta.data %>%
 Look at the annotation
 ```{r fig.width=6, fig.height=6}
 # We will define a palette (this is optional)
-annot_pal <- c("#ffb6db", "#004949", "#490092", "#920000", "#db6d00")
+annot_pal <- c("#E41A1C", "#FF7F00", "#984EA3", "#4DAF4A", "#377EB8")
 names(annot_pal) <- c("Fibrotic", "HER2-/ESR1-", "HER2-/ESR1+", "HER2+/ESR1-", "HER2+/ESR1+")
 SpatialDimPlot(
   sp_obj,
@@ -479,7 +479,7 @@ DT::datatable(sign, filter = "top")
 Let's now visualize how the deconvoluted spots on the the Seurat object.
 
 ```{r}
-# keep on
+# We will only add the deconvolution matrix
 decon_mtrx <- decon_mtrx_ls[[2]]
 decon_mtrx <- decon_mtrx[, colnames(decon_mtrx) != "res_ss"]
 decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
@@ -537,15 +537,15 @@ scatterpie_plot(
   scale_fill_manual(values = cell_type_palette)
 ```
 
-Next, we can visualize the individual cell type proportions on the spatial slide. 
+Next, we can visualize the individual cell type proportions on the spatial slide.
 
-```{r fig.width=25, fig.height=30}
+```{r fig.width=25, fig.height=32}
 scaleFUN <- function(x) sprintf("%.2f", x)
 SpatialPlot(
   object = sp_obj,
   features = ct,
   alpha = c(0, 1),
-  ncol = 5, image.alpha = 0) &
+  ncol = 4, image.alpha = 0) &
   scale_fill_gradientn(
     colors = grDevices::heat.colors(10, rev = TRUE),
     # 2 decimals in the legend
@@ -563,7 +563,7 @@ VlnPlot(
   features = c("Monocytes", "TAMs.C1QC", "TAMs.proinflamatory", "CD8.terminally.exhausted", "CD8.pre.exhausted"),
   group.by = "annotation",
   cols = annot_pal,
-  pt.size = 0.5
+  pt.size = 0.2
   )
 ```
 
