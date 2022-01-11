@@ -374,7 +374,7 @@ organs and papers we want to minize batch effect. To do so we will only select
 cells coming from one cancer type which has enough cells for all cell types.
 
 ```{r load-sc}
-atlas <- readRDS("R_obj/downsample_atlas_sincellTE.rds")
+atlas <- readRDS("R_obj/TICAtlas_downsample.rds")
 head(atlas@meta.data)
 table(atlas@meta.data$lv1_annot)
 ```
@@ -390,10 +390,9 @@ sc_markers <- FindAllMarkers(
   object = atlas,
   assay = "RNA",
   slot = "data",
-  only.pos = TRUE)
-# sc_markers <- filter(
-#   sc_markers,
-#   avg_log2FC >= 0.7)
+  only.pos = TRUE
+  )
+
 saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 ```
 
@@ -410,15 +409,16 @@ Run the deconvolution using the scRNAseq atlas and the spatial transcriptomics d
 
 ```{r deconvolution, eval = FALSE}
 decon_mtrx_ls <- spotlight_deconvolution(
-  se_sc = atlas,
+  se_sc = atlas, # Single-cell dataset
   counts_spatial = sp_obj@assays$Spatial@counts,
-  clust_vr = "lv1_annot",
-  cluster_markers = sc_markers,
-  hvg = 3000,
-  min_cont = 0,
+  clust_vr = "lv1_annot", # Label to use for the deconvolution (cell types)
+  cluster_markers = sc_markers, # Cell type markers
+  hvg = 3000, # Number of HVGs to use on top of the markers
+  min_cont = 0, # minimum expected contribution per cell type and spot
   assay = "RNA",
-  slot = "counts")
-# [1] "Time to train NMF model was 28.06mins"
+  slot = "counts"
+  )
+
 saveRDS(decon_mtrx_ls, "R_obj/deconvolution_ls.rds")
 ```
 
@@ -557,18 +557,13 @@ Lets now see the frequencies of selected cell types across the regions in the ti
 We will focus on pre-exhausted T cells and macrophages as they can give an idea of how 
 infiltrated the tumor can be. 
 
-```{r}
-# VlnPlot(
-#   sp_obj,
-#   features = c("CD8.pre.exhausted", "TAMs.proinflamatory"),
-#   group.by = "annotation",
-#   cols = annot_pal
-#   )
+```{r fig.height=10, fig.width=9}
 VlnPlot(
   sp_obj,
   features = c("Monocytes", "TAMs.C1QC", "TAMs.proinflamatory", "CD8.terminally.exhausted", "CD8.pre.exhausted"),
   group.by = "annotation",
-  cols = annot_pal
+  cols = annot_pal,
+  pt.size = 0.5
   )
 ```
 
