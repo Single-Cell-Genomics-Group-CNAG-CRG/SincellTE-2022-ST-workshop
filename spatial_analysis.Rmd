@@ -483,7 +483,7 @@ Let's now visualize how the deconvoluted spots on the the Seurat object.
 decon_mtrx <- decon_mtrx_ls[[2]]
 decon_mtrx <- decon_mtrx[, colnames(decon_mtrx) != "res_ss"]
 decon_mtrx <- decon_mtrx[, !is.na(colnames(decon_mtrx))]
-# Set as 0 those cell types that contribute <3% to the spot
+# Set as 0 those cell types that contribute <2% to the spot
 decon_mtrx[decon_mtrx < 0.02] <- 0
 ```
 
