@@ -48,7 +48,6 @@ library(patchwork)
 ```{r seed}
 # set seed for reproducibility purposes
 set.seed(1243)
-
 # create palette for the cell types from the pals package
 cell_type_palette <- c(
   "#5A5156", "#E4E1E3", "#F6222E", "#FE00FA",
@@ -135,11 +134,9 @@ umi_vln_plt <- VlnPlot(
   features = "nCount_Spatial", 
   pt.size = 0.1) + 
   NoLegend()
-
 umi_sp_plt <- SpatialFeaturePlot(
   sp_obj, 
   features = "nCount_Spatial")
-
 umi_vln_plt | umi_sp_plt | img
 ```
 
@@ -155,11 +152,9 @@ feat_vln_plt <- VlnPlot(
   features = "nFeature_Spatial", 
   pt.size = 0.1) + 
   NoLegend()
-
 feat_sp_plt <- SpatialFeaturePlot(
   sp_obj, 
   features = "nFeature_Spatial")
-
 feat_vln_plt | feat_sp_plt | img
 ```
 
@@ -176,7 +171,6 @@ spot that belong to mitochondrial/ribosomal genes.
 sp_obj[["mt.content"]] <- PercentageFeatureSet(
   object = sp_obj,
   pattern = "^MT-")
-
 summary(sp_obj[["mt.content"]])
 ```
 
@@ -185,7 +179,6 @@ summary(sp_obj[["mt.content"]])
 sp_obj[["rb.content"]] <- PercentageFeatureSet(
   object = sp_obj,
   pattern = "^RPL|^RPS")
-
 summary(sp_obj[["rb.content"]])
 ```
 
@@ -267,7 +260,6 @@ sp_obj <- RunPCA(
   sp_obj, 
   npcs = 50
   )
-
 ElbowPlot(
   sp_obj, 
   ndims = 50
@@ -298,7 +290,6 @@ sp_obj <- FindNeighbors(
   reduction = "pca", 
   dims = 1:20
   )
-
 sp_obj <- FindClusters(
   sp_obj,
   resolution = 0.3
@@ -311,12 +302,10 @@ umap_plt <- DimPlot(
   sp_obj, 
   label = TRUE
   )
-
 sp_plt <- SpatialDimPlot(
   sp_obj
   ) +
   NoLegend()
-
 umap_plt + sp_plt
 ```
 
@@ -361,7 +350,6 @@ Look at the annotation
 # We will define a palette (this is optional)
 annot_pal <- c("#ffb6db", "#004949", "#490092", "#920000", "#db6d00")
 names(annot_pal) <- c("Fibrotic", "HER2-/ESR1-", "HER2-/ESR1+", "HER2+/ESR1-", "HER2+/ESR1+")
-
 SpatialDimPlot(
   sp_obj,
   group.by = "annotation",
@@ -386,7 +374,7 @@ organs and papers we want to minize batch effect. To do so we will only select
 cells coming from one cancer type which has enough cells for all cell types.
 
 ```{r load-sc}
-atlas <- readRDS("R_obj/downsample_atlas_sincellTE.rds")
+atlas <- readRDS("R_obj/TICAtlas_downsample.rds")
 head(atlas@meta.data)
 table(atlas@meta.data$lv1_annot)
 ```
@@ -402,11 +390,8 @@ sc_markers <- FindAllMarkers(
   object = atlas,
   assay = "RNA",
   slot = "data",
-  only.pos = TRUE)
-
-# sc_markers <- filter(
-#   sc_markers,
-#   avg_log2FC >= 0.7)
+  only.pos = TRUE
+  )
 
 saveRDS(sc_markers, "R_obj/filtered_atlas_markers.rds")
 ```
@@ -424,15 +409,16 @@ Run the deconvolution using the scRNAseq atlas and the spatial transcriptomics d
 
 ```{r deconvolution, eval = FALSE}
 decon_mtrx_ls <- spotlight_deconvolution(
-  se_sc = atlas,
+  se_sc = atlas, # Single-cell dataset
   counts_spatial = sp_obj@assays$Spatial@counts,
-  clust_vr = "lv1_annot",
-  cluster_markers = sc_markers,
-  hvg = 3000,
-  min_cont = 0,
+  clust_vr = "lv1_annot", # Label to use for the deconvolution (cell types)
+  cluster_markers = sc_markers, # Cell type markers
+  hvg = 3000, # Number of HVGs to use on top of the markers
+  min_cont = 0, # minimum expected contribution per cell type and spot
   assay = "RNA",
-  slot = "counts")
-# [1] "Time to train NMF model was 28.06mins"
+  slot = "counts"
+  )
+
 saveRDS(decon_mtrx_ls, "R_obj/deconvolution_ls.rds")
 ```
 
@@ -446,12 +432,9 @@ Before even looking at the decomposed spots we can gain insight on how well the 
 ```{r}
 nmf_mod <- decon_mtrx_ls[[1]]
 decon_mtrx <- decon_mtrx_ls[[2]]
-
 rownames(decon_mtrx) <- colnames(sp_obj)
-
 # info on the NMF model
 nmf_mod[[1]]
-
 # deconvolution matrix
 head(decon_mtrx)
 ```
@@ -466,7 +449,6 @@ rownames(h) <- paste("Topic", 1:nrow(h), sep = "_")
 topic_profile_plts <- SPOTlight::dot_plot_profiles_fun(
   h = h,
   train_cell_clust = nmf_mod[[2]])
-
 topic_profile_plts[[2]]
 ```
 
@@ -488,7 +470,6 @@ for B cells (i.e. *CD79A*, *CD79B*, *MS4A1*, *IGHD*...).
 ```{r basis-dt}
 sign <- basis(nmf_mod[[1]])
 colnames(sign) <- paste0("Topic", seq_len(ncol(sign)))
-
 # This can be dynamically visualized with DT as shown below
 DT::datatable(sign, filter = "top")
 ```
@@ -523,7 +504,6 @@ represents each spot as an individual piechart where the proportion of each
 cell type within that spot is represented.
 ```{r}
 ct <- colnames(decon_mtrx)
-
 scatterpie_plot(
     se_obj = sp_obj,
     cell_types_all = ct,
@@ -542,7 +522,6 @@ ubiquitouslyy expressed.
 keep_0.8 <- colSums(sp_obj@meta.data[, ct] > 0) < 0.8 * ncol(sp_obj)
 # but not those that were not found on the tissue
 keep_g0 <- colSums(sp_obj@meta.data[, ct] > 0) > 0
-
 # select cell types fullfiling the conditions
 ct_var <- colnames(sp_obj@meta.data[, ct])[keep_0.8 & keep_g0]
 ct_var
@@ -562,7 +541,6 @@ Next, we can visualize the individual cell type proportions on the spatial slide
 
 ```{r fig.width=25, fig.height=30}
 scaleFUN <- function(x) sprintf("%.2f", x)
-
 SpatialPlot(
   object = sp_obj,
   features = ct,
@@ -579,19 +557,13 @@ Lets now see the frequencies of selected cell types across the regions in the ti
 We will focus on pre-exhausted T cells and macrophages as they can give an idea of how 
 infiltrated the tumor can be. 
 
-```{r}
-# VlnPlot(
-#   sp_obj,
-#   features = c("CD8.pre.exhausted", "TAMs.proinflamatory"),
-#   group.by = "annotation",
-#   cols = annot_pal
-#   )
-
+```{r fig.height=10, fig.width=9}
 VlnPlot(
   sp_obj,
   features = c("Monocytes", "TAMs.C1QC", "TAMs.proinflamatory", "CD8.terminally.exhausted", "CD8.pre.exhausted"),
   group.by = "annotation",
-  cols = annot_pal
+  cols = annot_pal,
+  pt.size = 0.5
   )
 ```
 
@@ -601,7 +573,6 @@ plt_annot <- SpatialDimPlot(
   group.by = "annotation",
   cols = annot_pal
   )
-
 img | plt_annot
 ```
 
